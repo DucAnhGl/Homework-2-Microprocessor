@@ -1,11 +1,16 @@
 ;
-; homework2 master.asm
+; homework2_2 master.asm
 ;
-; Created: 11/16/2023 2:50:17 PM
+; Created: 11/24/2023 10:44:47 AM
 ; Author : Duc Anh
+;
 ;
 
 	.equ SS = 4
+	.equ MOSI = 5
+	.equ MISO = 6
+	.equ SCK = 7
+
 	.def LCDData = r16
 	.equ LCDPORT = PORTA ; Set signal port reg to PORTA
 	.equ LCDPORTDIR = DDRA ; Set signal port dir reg to PORTA
@@ -17,6 +22,7 @@
 	.equ LCD_D6 = PINA6
 	.equ LCD_D5 = PINA5
 	.equ LCD_D4 = PINA4
+	
 	.org 0x00
 	rjmp main
 
@@ -26,21 +32,23 @@
 	.org 0x40
 
 main:
-	
-	call LCD_Init	; Initialize the LCD
 
+	call LCD_Init	; Initialize the LCD
+	;ldi r16, 0x80
+	;call LCD_Send_Command ; Force cursor to be on 1st position
+	
 	;USART_Init:
 	 ; Set baud rate to 9600 bps with 8 MHz clock
 	 ldi r16, 103
 	 sts UBRR0L, r16
 	;set double speed
-	ldi r16, (1 << U2X0)
+	 ldi r16, (1 << U2X0)
 	 sts UCSR0A, r16
 	 ; Set frame format: 8 data bits, no parity, 1 stop bit
 	 ldi r16, (1 << UCSZ01) | (1 << UCSZ00)
 	 sts UCSR0C, r16
 	 ; Enable transmitter and receiver
-	 ldi r16, (1 << RXEN0) | (1 << TXEN0)
+	 ldi r16,  (1 << TXEN0) ;| (1 << RXEN0) 
 	 sts UCSR0B, r16
 	 
 
@@ -51,59 +59,54 @@ main:
 	ldi r16, (1<<INT0)			;Enable INT0
 	out EIMSK, r16
 
-	ldi r16, (0<<2)	; Set INT0 pin as input 
+	ldi r16, (0<<2)	| (1<<1) ; Set interrupt pin as input and UART TXD as output
 	out DDRD, r16
 
 ;SPI initialize
-	ldi r16, (1<<5) | (1<<7) | (1<<4)	;Set output for pins SS, CLK, MOSI
+	ldi r16, (1<<SS) | (1<<MOSI) | (1<<SCK)	;Set output for pins SS, CLK, MOSI
 	out DDRB, r16
+
+	sbi PORTB, SS ;disable SPI transfer
+
 ;LSB Master mode, sampling on rising edge, fclk / 8
 	ldi r16, (1<<SPE0)  | (1<<MSTR0) | (1<<SPR00) | (1<<DORD0)
 	out SPCR0, r16
 	ldi r16, (1<<SPI2X0)
 	out SPSR0, r16
 
-	ldi r18, 0
-
-;Set PORTA as output for LED bar 
-	;ldi r16, 0xFF
-	;out DDRA, r16
-
 
 start:	
-		;out PORTA, r18
 		ldi r16, 0
 		ldi r17, 0
-		call LCD_Move_Cursor
-		
+		call LCD_move_cursor
+
 		ldi r16, 0x30
 		add r16, r18
-		call  LCD_Send_Data
-		
 
-		jmp start
-
-NO_KEY_PRESSED:
-		ldi r16, 0x30
 		call LCD_Send_Data
 		jmp start
+
 
 ;-------------------------------------------------------------
 
 ;Interrupt
 INT0_Keypressed:
+
+		ldi r16, 0x00 ;Dummy byte
 		cbi	PORTB,SS
 		call SPI_Transmit	
 		sbi	PORTB,SS
-		;lsr r18
-		;mov r16, r18
-		;call out_data_lcd
+
+		 
+		;call LCD_out_screen
+
 		reti
 
 ;--------------------------------------------------------------
 ;Send 1 byte in r16 using SPI, recieved data in r18
 SPI_Transmit:
 		push r17
+
 		out SPDR0, r16
 wait:	
 		in r17, SPSR0
@@ -111,9 +114,11 @@ wait:
 		rjmp wait
 
 		in r18, SPDR0
-
+		
 		pop r17
 		ret
+
+
 ;------------------------------------------------------------------
 ;send out 1 byte to UART in r16
 USART_SendChar:
@@ -126,16 +131,6 @@ USART_SendChar_Wait:
 	sts UDR0, r16 ;send out
 	pop r17
 	ret
-;------------------------------------------------------------------
-out_data_lcd:
-		ldi r16, 0
-		ldi r17, 0
-		call LCD_Move_Cursor
-
-		ldi r16, 0x30
-		add r16, r18
-		call USART_SendChar 
-		ret
 
 ;------------------------------------------------------------------
 ;subroutine to initialize the LCD
@@ -161,7 +156,7 @@ LCD_Init:
 	ret
 
 ;subroutine to wait
-LCD_wait_busy:
+LCD_wait_busy: 
 	push r16
 	ldi r16, 0b00000111 ; set PA7-PA4 as input, PA2-PA0 as output
 	out LCDPORTDIR, r16
@@ -223,6 +218,7 @@ LCD_Send_Data:
 	nop
 	cbi LCDPORT, LCD_EN
 	pop r17
+
 	ret
 
 ;subroutine to send command to LCD
@@ -288,3 +284,4 @@ DELAY_10MS:
 	DEC R21 ;1MC
 	BRNE L1 ;2/1MC
 	RET ;4MC
+
