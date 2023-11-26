@@ -1,9 +1,15 @@
 ;
-; homework2 slave.asm
+; homework2_2 slave.asm
 ;
-; Created: 11/16/2023 3:03:13 PM
+; Created: 11/24/2023 10:45:57 AM
 ; Author : Duc Anh
 ;
+
+	.equ SS = 4
+	.equ MOSI = 5
+	.equ MISO = 6
+	.equ SCK = 7
+
 	;.org 0x40
 ;Keypad I/O initialize
 ;C3-C0 connect to PA3-PA0
@@ -18,8 +24,8 @@
 	ldi r16, (1<<SPE0) | (1<<DORD0)
 	out SPCR0, r16	
 
-	ldi r16, (1<<6)	| (1<<0)	; Set MISO as output, set PORTB0 as output for interrupt signal 
-	out DDRB, r16	
+	ldi r16, (1<<MISO) | (1<<0) ;| (1<<1)	; Set MISO as output, set PORTB0 as output for interrupt signal,
+	out DDRB, r16						; pin 1 as input to recieve transfer ready bit
 
 
 ;Initialize interrupt signal
@@ -29,8 +35,8 @@
 main:
 	
 	call keypad_scan
-	cbi PORTB, 0
-	call SPI_Transmit
+	;cbi PORTB, 0
+	;call SPI_Transmit
 	rjmp main
 
 
@@ -85,8 +91,12 @@ keypad_scan_found:
 	lsl r23 ; shift row value 4 bits to the left
 	lsl r23
 	add r23, r24 ; add row value to column value
-	;cbi PORTB, 0	; Clear interrupt signal
-	;call SPI_Transmit
+
+	cbi PORTB, 0	; Clear interrupt signal
+	sbi PORTB, 0	; Set interrupt signal
+
+	call SPI_Transmit
+	
 	ret
 
 keypad_scan_not_found:
@@ -98,21 +108,20 @@ keypad_scan_not_found:
 ;Subroutine to transmit data in r23
 SPI_Transmit:
 		push r17
-		;cbi PORTB, 0	; Clear interrupt signal 
-		out SPDR0, r23	; Output data to register to transmit
 
+SPI_SS:
+		sbic PINB, SS ;check if the master is ready to transmit
+		rjmp SPI_SS
 		
-
-
+		out SPDR0, r23	; Output data to register to transmit
+	
 wait:	
 		in r17, SPSR0
 		sbrs r17, SPIF0
 		rjmp wait
-
 		in r18, SPDR0
-
-		sbi PORTB, 0	; Set interrupt signal 
 
 		pop r17
 
 		ret
+
